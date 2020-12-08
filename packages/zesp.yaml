@@ -1,1 +1,237 @@
+################################################################
+## Zesp MediaPlayer by Beetle
+##
+## Исходник: https://raw.githubusercontent.com/Beetle-II/HomeAssistant/main/packages/zesp.yaml
+################################################################
 
+################################################################
+## Инструкция по установке
+################################################################
+##
+##  1. Изменить ID устройства на свой
+##  2. Сохранить файл в CONFIGDIR/packages/zesp.yaml
+##
+##  3. Добавить `packages: !include_dir_named packages` в секцию
+##     `homeassistant:` в configuration.yaml
+##
+##     homeassistant:
+##       packages: !include_dir_named packages
+##
+##  4. Перезапустить Home Assistant
+##
+################################################################
+
+################################################################
+## Lovelace карточка
+################################################################
+##
+##  Добавляем в нужное место:
+##      - type: entities
+##        title: Zesp медиаплеер
+##        show_header_toggle: false
+##        entities:
+##          - entity: input_boolean.zesp_player_status
+##          - entity: input_select.zesp_player_source_list
+##          - entity: input_number.zesp_player_volume
+##
+##  Можно стандартной карточкой:
+##      - type: media-control
+##        entity: media_player.zesp_media_player
+##
+################################################################
+
+homeassistant:
+  customize:
+    package.node_anchors:
+      customize: &customize
+        package: 'zesp_radio'
+
+    media_player.zesp_media_player:
+      friendly_name: Медиаплеер Zesp
+      device_class: speaker
+      supported_features: 3076 #24068
+      id: 00158D000XXXXXX                # <<<----------- необходимо указать id своего шлюза
+
+    automation.zesp_play_stop:
+      <<: *customize
+      friendly_name: Zesp. Медиаплеер (Включение/остановка)
+      icon: mdi:power
+
+    automation.zesp_say:
+      <<: *customize
+      friendly_name: Zesp. Произнести на шлюзе
+      icon: mdi:account-voice
+
+    automation.zesp_light_on:
+      <<: *customize
+      friendly_name: Zesp. Включить подсветку
+      icon: mdi:lightbulb-on-outline
+
+    automation.zesp_light_off:
+      <<: *customize
+      friendly_name: Zesp. Отключить подсветку через 2 минуты
+      icon: mdi:lightbulb-off-outline
+
+################################################
+
+input_boolean:
+  zesp_player_status:
+    name: Медиаплеер Zesp
+    icon: mdi:radio
+
+input_number:
+  zesp_player_volume:
+    name: Громкость Zesp
+    icon: mdi:volume-high
+    min: 0
+    max: 1
+    step: 0.05
+
+input_text:
+  zesp_tts_say:
+    name: Произнести на Zesp
+    initial: Тестовое сообщение
+
+input_select:
+  zesp_player_source_list:
+    name: Источник воспроизведения
+    options:
+      - 'Остановлен'
+      - 'Супер дискотека 90x'
+      - 'Медляк FM'
+      - 'Radio Record - Gold'
+      - 'Radio Record - Trancemission'
+    icon: mdi:playlist-music-outline
+
+light:
+  platform: mqtt
+  name: Подсветка на шлюзе
+  unique_id: zesp_led
+  schema: json
+  state_topic: zesp32/{{ id }}/light/state
+  command_topic: zesp32/{{ id }}/0103000000/light/set
+  brightness: true
+  brightness_scale: 100
+  rgb: true
+
+media_player:
+  platform: universal
+  name: zesp_media_player
+  entity_id: zesp_media_player
+  commands:
+    turn_on:
+      service: input_boolean.turn_on
+      entity_id: input_boolean.zesp_player_status
+    turn_off:
+      service: input_boolean.turn_off
+      entity_id: input_boolean.zesp_player_status
+    volume_set:
+      service: input_number.set_value
+      data_template:
+        entity_id: input_number.zesp_player_volume 
+        value: '{{ volume_level | round(2) }}'
+    volume_up:
+      service: input_number.set_value
+      data_template:
+        entity_id: input_number.zesp_player_volume 
+        value: '{% set vol = (states.input_number.zesp_player_volume.state | float + 0.05) %}
+                {% if vol <= 1 %} {{ vol | round(2) }} {% else %} 1 {% endif %}'
+    volume_down:
+      service: input_number.set_value
+      data_template:
+        entity_id: input_number.zesp_player_volume 
+        value: '{% set vol = (states.input_number.zesp_player_volume.state | float - 0.05) %}
+                {% if vol >= 0 %} {{ vol | round(2) }} {% else %} 0 {% endif %}'
+    select_source:    
+      - service: input_select.select_option
+        data_template:
+          entity_id: input_select.zesp_player_source_list
+          option: '{{ source }}'
+  attributes:
+    state: input_boolean.zesp_player_status
+    volume_level: input_number.zesp_player_volume
+    source: input_select.zesp_player_source_list
+    source_list: input_select.zesp_player_source_list|options
+
+sensor:
+  platform: mqtt
+  name: Датчик освещения на шлюзе
+  device_class: illuminance
+  unique_id: zesp_illuminance
+  state_topic: zesp32/{{ id }}/illuminance/state
+
+################################################
+
+automation:
+- alias: zesp_play_stop
+  trigger:
+    - platform: state
+      entity_id: input_number.zesp_player_volume
+    - platform: state
+      entity_id: input_select.zesp_player_source_list
+  action:
+    - service: mqtt.publish
+      data:
+        topic: zesp32/{{ id }}/playSound/kill/set
+        payload: '1'
+    - delay: '1'
+    - condition: state
+      entity_id: input_boolean.zesp_player_status
+      state: 'on'
+    - service: mqtt.publish
+      data:
+        topic: zesp32/{{ id }}/playSound/json/set
+        payload: >-
+          {"volume":"{{ states('input_number.zesp_player_volume') | float * 5000 }}","path":"
+          {%- set mapper = {
+              'Супер дискотека 90x':'http://air.radiorecord.ru:8102/sd90_320',
+              'Медляк FM':'http://air2.radiorecord.ru:805/mdl_320',
+              'Radio Record - Gold':'http://air2.radiorecord.ru:805/gold_320',
+              'Radio Record - Trancemission':'http://air.radiorecord.ru:8102/tm_320'
+            }
+          -%}
+          {%- set source = states('input_select.zesp_player_source_list') -%}
+          {{ mapper[source] if source in mapper else '' }}"}
+
+# Произносим указанный текст
+- alias: zesp_say
+  trigger:
+    platform: state
+    entity_id: input_text.zesp_tts_say
+  condition: "{{ (states('input_text.zesp_tts_say') |count) > 5 }}"
+  action:
+    service: mqtt.publish
+    data:
+      topic: zesp32/{{ id }}/saytxt/json/set
+      payload: >-
+        {"volume":"15000","lang":"ru","text":"{{ states('input_text.zesp_tts_say') }}"}
+
+# Включаем подсветку
+- alias: zesp_light_on
+  trigger:
+    platform: state
+    entity_id: binary_sensor.lumi_lumi_sensor_motion_aq2_ias_zone
+    to: 'on'
+  condition:
+    condition: and
+    conditions:
+      - condition: numeric_state
+        entity_id: sensor.datchik_osveshcheniia_na_shliuze
+        below: 50
+      - condition: time
+        before: '07:00:00'
+        after: '23:00:00'
+  action:
+    service: light.turn_on
+    entity_id: light.podsvetka_na_shliuze
+
+# Отключаем подсветку через 2 минуты
+- alias: zesp_light_off
+  trigger:
+    platform: state
+    entity_id: light.podsvetka_na_shliuze
+    to: 'on'
+  action:
+    - delay: '00:02:00'
+    - service: light.turn_off
+      entity_id: light.podsvetka_na_shliuze
