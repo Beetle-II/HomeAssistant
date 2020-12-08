@@ -8,7 +8,7 @@
 ## Инструкция по установке
 ################################################################
 ##
-##  1. Изменить ID устройства на свой
+##  1. Изменить ID устройства 00158D0001234567 на свой
 ##  2. Сохранить файл в CONFIGDIR/packages/zesp.yaml
 ##
 ##  3. Добавить `packages: !include_dir_named packages` в секцию
@@ -50,7 +50,6 @@ homeassistant:
       friendly_name: Медиаплеер Zesp
       device_class: speaker
       supported_features: 3076 #24068
-      id: 00158D000XXXXXXX                # <<<----------- необходимо указать id своего шлюза
 
     automation.zesp_play_stop:
       <<: *customize
@@ -108,11 +107,18 @@ light:
   name: Подсветка на шлюзе
   unique_id: zesp_led
   schema: json
-  state_topic: zesp32/{{ id }}/light/state
-  command_topic: zesp32/{{ id }}/0103000000/light/set
+  state_topic: zesp32/00158D0001234567/light/state
+  command_topic: zesp32/00158D0001234567/0103000000/light/set
   brightness: true
   brightness_scale: 100
   rgb: true
+
+sensor:
+  platform: mqtt
+  name: Датчик освещения на шлюзе
+  device_class: illuminance
+  unique_id: zesp_illuminance
+  state_topic: zesp32/00158D0001234567/illuminance/state
 
 media_player:
   platform: universal
@@ -143,22 +149,15 @@ media_player:
         value: '{% set vol = (states.input_number.zesp_player_volume.state | float - 0.05) %}
                 {% if vol >= 0 %} {{ vol | round(2) }} {% else %} 0 {% endif %}'
     select_source:    
-      - service: input_select.select_option
-        data_template:
-          entity_id: input_select.zesp_player_source_list
-          option: '{{ source }}'
+      service: input_select.select_option
+      data_template:
+        entity_id: input_select.zesp_player_source_list
+        option: '{{ source }}'
   attributes:
     state: input_boolean.zesp_player_status
     volume_level: input_number.zesp_player_volume
     source: input_select.zesp_player_source_list
     source_list: input_select.zesp_player_source_list|options
-
-sensor:
-  platform: mqtt
-  name: Датчик освещения на шлюзе
-  device_class: illuminance
-  unique_id: zesp_illuminance
-  state_topic: zesp32/{{ id }}/illuminance/state
 
 ################################################
 
@@ -172,7 +171,7 @@ automation:
   action:
     - service: mqtt.publish
       data:
-        topic: zesp32/{{ id }}/playSound/kill/set
+        topic: zesp32/00158D0001234567/playSound/kill/set
         payload: '1'
     - delay: '1'
     - condition: state
@@ -180,7 +179,7 @@ automation:
       state: 'on'
     - service: mqtt.publish
       data:
-        topic: zesp32/{{ id }}/playSound/json/set
+        topic: zesp32/00158D0001234567/playSound/json/set
         payload: >-
           {"volume":"{{ states('input_number.zesp_player_volume') | float * 5000 }}","path":"
           {%- set mapper = {
@@ -202,7 +201,7 @@ automation:
   action:
     service: mqtt.publish
     data:
-      topic: zesp32/{{ id }}/saytxt/json/set
+      topic: zesp32/00158D0001234567/saytxt/json/set
       payload: >-
         {"volume":"15000","lang":"ru","text":"{{ states('input_text.zesp_tts_say') }}"}
 
