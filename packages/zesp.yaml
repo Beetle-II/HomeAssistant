@@ -50,7 +50,7 @@ homeassistant:
       friendly_name: Медиаплеер Zesp
       device_class: speaker
       supported_features: 3076 #24068
-      id: 00158D000XXXXXX                # <<<----------- необходимо указать id своего шлюза
+      id: 00158D000XXXXXXX                # <<<----------- необходимо указать id своего шлюза
 
     automation.zesp_play_stop:
       <<: *customize
