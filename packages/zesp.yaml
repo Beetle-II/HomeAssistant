@@ -44,17 +44,27 @@ homeassistant:
   customize:
     package.node_anchors:
       customize: &customize
-        package: 'zesp_radio'
+        package: 'zesp'
 
     media_player.zesp_media_player:
       friendly_name: Медиаплеер Zesp
       device_class: speaker
       supported_features: 3076 #24068
 
-    automation.zesp_play_stop:
+    automation.zesp_power:
       <<: *customize
-      friendly_name: Zesp. Медиаплеер (Включение/остановка)
+      friendly_name: Zesp. Статус
       icon: mdi:power
+
+    automation.zesp_select_source_out:
+      <<: *customize
+      friendly_name: Zesp. Выбор источника
+      icon: mdi:playlist-music-outline
+
+    automation.zesp_volume_out:
+      <<: *customize
+      friendly_name: Zesp. Громкость
+      icon: mdi:volume-high
 
     automation.zesp_say:
       <<: *customize
@@ -76,7 +86,8 @@ homeassistant:
 input_boolean:
   zesp_player_status:
     name: Медиаплеер Zesp
-    icon: mdi:radio
+    icon: mdi:power
+    initial: 'off'
 
 input_number:
   zesp_player_volume:
@@ -89,7 +100,8 @@ input_number:
 input_text:
   zesp_tts_say:
     name: Произнести на Zesp
-    initial: Тестовое сообщение
+    icon: mdi:account-voice
+    initial: Т'естовое сообщение
 
 input_select:
   zesp_player_source_list:
@@ -125,12 +137,12 @@ media_player:
   name: zesp_media_player
   entity_id: zesp_media_player
   commands:
-    turn_on:
-      service: input_boolean.turn_on
-      entity_id: input_boolean.zesp_player_status
-    turn_off:
-      service: input_boolean.turn_off
-      entity_id: input_boolean.zesp_player_status
+    # turn_on:
+      # service: input_boolean.turn_on
+      # entity_id: input_boolean.zesp_player_status
+    # turn_off:
+      # service: input_boolean.turn_off
+      # entity_id: input_boolean.zesp_player_status
     volume_set:
       service: input_number.set_value
       data_template:
@@ -161,27 +173,70 @@ media_player:
 
 ################################################
 
+# Меняем статус
 automation:
-- alias: zesp_play_stop
+- alias: zesp_power
   trigger:
-    - platform: state
-      entity_id: input_number.zesp_player_volume
-    - platform: state
-      entity_id: input_select.zesp_player_source_list
+    platform: mqtt
+    topic: zesp32/state
+    payload: 'online'   
+  action:
+    - service: input_boolean.turn_on
+      entity_id: input_boolean.zesp_player_status
+    - delay: '00:01:00'
+    - service: input_boolean.turn_off
+      entity_id: input_boolean.zesp_player_status
+   
+# Получаем громкость
+- alias: zesp_volume_in
+  trigger:
+    platform: mqtt
+    topic: zesp32/00158D0001234567/playSound/volume/set
+  condition: '{{ states.input_number.zesp_player_volume.state != (((trigger.payload | float) / 30000) | round (2)) }}'
+  action:
+    service: input_number.set_value
+    data_template:
+      entity_id: input_number.zesp_player_volume 
+      value: '{{ ((trigger.payload | float) / 30000) | round (2) }}'
+
+# Меняем громкость
+- alias: zesp_volume_out
+  trigger:
+    platform: state
+    entity_id: input_number.zesp_player_volume
+  action:
+    service: mqtt.publish
+    data:
+      topic: zesp32/00158D0001234567/playSound/volume/set
+      payload: >-
+        {{ states('input_number.zesp_player_volume') | float * 30000 }}
+
+# Получаем источник
+# - alias: zesp_select_source_out
+  # trigger:
+    # platform: mqtt
+    # topic: zesp32/00158D0001234567/playSound/path/set
+    # condition: '{{ states.input_select.zesp_player_source_list.state != trigger.payload }}'
+  # action:
+    # service: input_select.select_option
+    # data_template:
+      # entity_id: input_select.zesp_player_source_list
+      # option: '{{ trigger.payload }}'
+
+# Меняем источник
+- alias: zesp_select_source_out
+  trigger:
+    platform: state
+    entity_id: input_select.zesp_player_source_list
   action:
     - service: mqtt.publish
       data:
         topic: zesp32/00158D0001234567/playSound/kill/set
         payload: '1'
-    - delay: '1'
-    - condition: state
-      entity_id: input_boolean.zesp_player_status
-      state: 'on'
     - service: mqtt.publish
       data:
-        topic: zesp32/00158D0001234567/playSound/json/set
+        topic: zesp32/00158D0001234567/playSound/path/set
         payload: >-
-          {"volume":"{{ states('input_number.zesp_player_volume') | float * 5000 }}","path":"
           {%- set mapper = {
               'Супер дискотека 90x':'http://air.radiorecord.ru:8102/sd90_320',
               'Медляк FM':'http://air2.radiorecord.ru:805/mdl_320',
@@ -190,8 +245,8 @@ automation:
             }
           -%}
           {%- set source = states('input_select.zesp_player_source_list') -%}
-          {{ mapper[source] if source in mapper else '' }}"}
-
+          {{ mapper[source] if source in mapper else '' }}
+  
 # Произносим указанный текст
 - alias: zesp_say
   trigger:
@@ -203,7 +258,11 @@ automation:
     data:
       topic: zesp32/00158D0001234567/saytxt/json/set
       payload: >-
-        {"volume":"15000","lang":"ru","text":"{{ states('input_text.zesp_tts_say') }}"}
+        {"volume":"30000","lang":"ru","text":"{{ states('input_text.zesp_tts_say') }}"}
+      # topic: zesp32/00158D0001234567/saytxt/text/set
+      # payload: >-
+        # {{ states('input_text.zesp_tts_say') }}
+
 
 # Включаем подсветку
 - alias: zesp_light_on
